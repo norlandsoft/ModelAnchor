@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ModelAnchor · DrawThings 模型管理</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">⚓</span>
+      <div>
+        <h1>ModelAnchor</h1>
+        <p class="brand-sub">DrawThings 模型检索、下载与合并</p>
+      </div>
+      <span class="version">v{{ version }}</span>
+    </div>
+    <div class="topbar-right">
+      <div class="path-chip" title="{{ model_dir_source }}">
+        <span class="path-label">模型目录</span>
+        <code id="model-dir">{{ model_dir }}</code>
+      </div>
+      <span class="pill" id="status-pill"><i></i>连接中</span>
+      <button class="btn ghost" id="refresh-btn" type="button">刷新</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="banner" id="banner" hidden></div>
+
+    <section class="stats">
+      <div class="stat">
+        <span class="stat-label">本地模型</span>
+        <strong id="stat-count">–</strong>
+      </div>
+      <div class="stat">
+        <span class="stat-label">占用空间</span>
+        <strong id="stat-size">–</strong>
+      </div>
+      <div class="stat">
+        <span class="stat-label">磁盘剩余</span>
+        <strong id="stat-free">–</strong>
+      </div>
+      <div class="stat">
+        <span class="stat-label">下载源</span>
+        <strong id="stat-base" class="mono">–</strong>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>在线检索</h2>
+        <span class="hint">HuggingFace 镜像 + ModelScope：单文件直接下载，整目录下载后可合并为单文件</span>
+      </div>
+      <form class="search-form" id="search-form">
+        <input id="search-input" type="search" placeholder="搜索模型，例如 flux、qwen-image、sdxl、wan2.2 …" autocomplete="off" />
+        <select id="source-select" aria-label="来源">
+          <option value="all">全部站点</option>
+          <option value="hf">HuggingFace 镜像</option>
+          <option value="modelscope">ModelScope</option>
+        </select>
+        <select id="layout-select" aria-label="类型">
+          <option value="all">全部类型</option>
+          <option value="single">单文件</option>
+          <option value="diffusers">Diffusers 目录</option>
+          <option value="lora">LoRA</option>
+        </select>
+        <button class="btn primary" type="submit">检索</button>
+      </form>
+      <div class="search-hints">
+        <span class="hint">试试：</span>
+        <button class="link-chip" type="button" data-q="flux lora">Flux LoRA</button>
+        <button class="link-chip" type="button" data-q="sdxl lora">SDXL LoRA</button>
+        <button class="link-chip" type="button" data-q="qwen-image lora">Qwen-Image LoRA</button>
+        <button class="link-chip" type="button" data-q="wan2.2 lora">Wan 2.2 LoRA</button>
+      </div>
+      <div id="search-errors" class="search-errors" hidden></div>
+      <div id="search-results" class="results"></div>
+    </section>
+
+    <section class="panel" id="tasks-panel" hidden>
+      <div class="panel-head">
+        <h2>任务</h2>
+        <button class="btn ghost small" id="clear-finished" type="button">清理已完成</button>
+      </div>
+      <div id="tasks" class="jobs"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>本地模型库</h2>
+        <span class="hint" id="library-hint"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="library">
+          <thead>
+            <tr><th>名称</th><th>类型</th><th class="num">大小</th><th>修改时间</th><th class="right">操作</th></tr>
+          </thead>
+          <tbody id="library-body"></tbody>
+        </table>
+        <p class="empty" id="library-empty" hidden>模型目录还是空的，从上面的检索里挑一个，或用链接安装。</p>
+      </div>
+    </section>
+
+    <section class="panel" id="merge-panel" hidden>
+      <div class="panel-head">
+        <h2>合并导出</h2>
+        <span class="hint">把 diffusers 目录合成单个 safetensors（按组件加标准键前缀）</span>
+      </div>
+      <div class="merge-row">
+        <label class="field">
+          <span>源目录</span>
+          <select id="merge-dir"></select>
+        </label>
+        <label class="field">
+          <span>架构</span>
+          <select id="merge-arch">
+            <option value="auto">自动识别</option>
+            <option value="sd15">Stable Diffusion 1.x</option>
+            <option value="sdxl">SDXL / SD 2.x</option>
+            <option value="flux">Flux / SD3</option>
+            <option value="generic">通用（目录名前缀）</option>
+          </select>
+        </label>
+        <label class="field grow">
+          <span>输出文件名</span>
+          <input id="merge-name" type="text" placeholder="留空则用 &lt;目录名&gt;.safetensors" />
+        </label>
+        <button class="btn primary" id="merge-btn" type="button">开始合并</button>
+      </div>
+      <p class="hint" id="merge-hint"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>从链接安装</h2></div>
+      <form class="install-form" id="install-form">
+        <input id="url-input" type="url" placeholder="https://hf-mirror.com/仓库/resolve/main/文件名.ckpt" required />
+        <input id="filename-input" type="text" placeholder="另存为（可留空，从链接推断）" />
+        <input id="sha256-input" type="text" placeholder="sha256（可选，64 位十六进制）" />
+        <button class="btn primary" type="submit">加入下载</button>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <footer class="foot">
+    <span>ModelAnchor v{{ version }}</span>
+    <a href="/docs" target="_blank" rel="noreferrer">API 文档</a>
+  </footer>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "updated": "2026-10-22",
+  "note": "示例目录：文件名取自 drawthingsai 在 HuggingFace 上的官方仓库。尺寸未写死，下载时按服务端 Content-Length 现取。",
+  "models": [
+    {
+      "id": "qwen-image-2.1-q8p",
+      "name": "Qwen-Image-2.1 · Q8P",
+      "repo": "drawthingsai/Qwen-Image-2.1",
+      "filename": "qwen_image_2.1_q8p.ckpt",
+      "kind": "diffusion",
+      "note": "8bit 量化主模型，通用文生图 / 图像编辑，质量优先"
+    },
+    {
+      "id": "qwen-image-2.1-q6p",
+      "name": "Qwen-Image-2.1 · Q6P",
+      "repo": "drawthingsai/Qwen-Image-2.1",
+      "filename": "qwen_image_2.1_q6p.ckpt",
+      "kind": "diffusion",
+      "note": "6bit 量化主模型，显存更省，速度更快"
+    },
+    {
+      "id": "qwen-image-2.1-vae",
+      "name": "Qwen-Image-2.1 · VAE (F16)",
+      "repo": "drawthingsai/Qwen-Image-2.1",
+      "filename": "qwen_image_2.1_vae_f16.ckpt",
+      "kind": "vae",
+      "note": "配 Qwen-Image-2.1 系列使用的 VAE"
+    },
+    {
+      "id": "qwen-3-vl-8b-i8x",
+      "name": "Qwen3-VL-8B Instruct · I8X",
+      "repo": "drawthingsai/Qwen-Image-2.1",
+      "filename": "qwen_3_vl_8b_instruct_i8x.ckpt",
+      "kind": "text_encoder",
+      "note": "Qwen-Image 系列的文本 / 视觉编码器"
+    },
+    {
+      "id": "flux-3-klein-q8p",
+      "name": "Flux 3 Klein · Q8P",
+      "repo": "drawthingsai/flux-3-image-klein",
+      "filename": "flux_3_klein_q8p.ckpt",
+      "kind": "diffusion",
+      "note": "Flux 3 Klein 的 8bit 版本，图生图 / 编辑"
+    },
+    {
+      "id": "flux-2-vae-f16",
+      "name": "Flux 2 · VAE (F16)",
+      "repo": "drawthingsai/flux-3-image-klein",
+      "filename": "flux_2_vae_f16.ckpt",
+      "kind": "vae",
+      "note": "Flux 3 Klein 配套 VAE"
+    },
+    {
+      "id": "qwen-3-vl-4b-i8x",
+      "name": "Qwen3-VL-4B Instruct · I8X",
+      "repo": "drawthingsai/flux-3-image-klein",
+      "filename": "qwen_3_vl_4b_instruct_i8x.ckpt",
+      "kind": "text_encoder",
+      "note": "Flux 3 Klein 配套文本编码器"
+    },
+    {
+      "id": "qwen3.8-27b-iq2s",
+      "name": "Qwen3.8-27B-DT · IQ2_S",
+      "repo": "drawthingsai/Qwen3.8-27B-GGUF",
+      "filename": "Qwen3.8-27B-DT-IQ2_S.gguf",
+      "kind": "llm",
+      "note": "DrawThings 内置 LLM（最低比特量化，体积最小）"
+    },
+    {
+      "id": "qwen3.8-27b-mmproj-f16",
+      "name": "Qwen3.8-27B-DT · 视觉投影器 (F16)",
+      "repo": "drawthingsai/Qwen3.8-27B-GGUF",
+      "filename": "mmproj-Qwen3.8-27B-DT-F16.gguf",
+      "kind": "projector",
+      "note": "只有需要看图时才装；配 27B-DT 主模型"
+    }
+  ]
+}

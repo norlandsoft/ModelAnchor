@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---- ModelAnchor ----
+models/
+.run/
+*.part
+.DS_Store
