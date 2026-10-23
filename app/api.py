@@ -68,6 +68,7 @@ def get_library(request: Request) -> LibraryResponse:
     settings = request.app.state.settings
     model_dir: Path = settings.model_dir
     files = library.scan(model_dir)
+    index = request.app.state.download_index
     free, total = library.disk_usage(model_dir)
     return LibraryResponse(
         model_dir=str(model_dir),
@@ -78,17 +79,7 @@ def get_library(request: Request) -> LibraryResponse:
         warning=settings.warning,
         disk_free_bytes=free,
         disk_total_bytes=total,
-        models=[
-            ModelFile(
-                filename=m.filename,
-                size_bytes=m.size_bytes,
-                modified_at=m.modified_at,
-                kind=m.kind,
-                partial=m.partial,
-                is_dir=m.is_dir,
-            )
-            for m in files
-        ],
+        models=[_model_file(m, index) for m in files],
     )
 
 
@@ -393,6 +384,25 @@ def delete_model(filename: str, request: Request) -> OkResponse:
 
 
 # --------------------------------------------------------------------- 工具
+def _model_file(model, index):
+    record: dict = {}
+    if model.partial:
+        base = model.filename[: -len(".part")] if model.filename.lower().endswith(".part") else model.filename
+        record = index.lookup(base) or {}
+    return ModelFile(
+        filename=model.filename,
+        size_bytes=model.size_bytes,
+        modified_at=model.modified_at,
+        kind=model.kind,
+        partial=model.partial,
+        is_dir=model.is_dir,
+        done_bytes=model.done_bytes,
+        total_bytes=model.total_bytes,
+        resume_url=record.get("url", ""),
+        resume_sha256=record.get("sha256", ""),
+    )
+
+
 def _hub(request: Request, source: str):
     hubs = request.app.state.hubs
     if source not in hubs:

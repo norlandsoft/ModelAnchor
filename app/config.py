@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 
 APP_NAME = "ModelAnchor"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -80,6 +80,9 @@ class Settings:
     catalog_path: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "catalog.json")
     web_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "web")
     allow_arbitrary_url: bool = True
+    download_index_path: Path = field(
+        default_factory=lambda: PROJECT_ROOT / ".run" / "downloads.json"
+    )
     # 为空表示正常；非空时前端会把它当黄色告示显示
     warning: str = ""
 
@@ -105,4 +108,8 @@ def get_settings() -> Settings:
         hf_base=os.environ.get("MODELANCHOR_HF_BASE", "https://hf-mirror.com").rstrip("/"),
         hub_timeout=float(os.environ.get("MODELANCHOR_HUB_TIMEOUT", "30")),
         allow_arbitrary_url=_env_bool("MODELANCHOR_ALLOW_ANY_URL", True),
+        download_index_path=Path(
+            os.environ.get("MODELANCHOR_STATE_DIR", str(PROJECT_ROOT / ".run"))
+        )
+        / "downloads.json",
     )

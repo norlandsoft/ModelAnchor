@@ -111,7 +111,11 @@ function renderStats() {
   const lib = state.library;
   if (!lib) return;
   const modelFiles = lib.models.filter((m) => !m.partial && !m.is_dir);
-  const used = lib.models.reduce((sum, m) => sum + m.size_bytes, 0);
+  // 分片 .part 是稀疏文件，按真实已下载字节算，避免占用空间虚高
+  const used = lib.models.reduce(
+    (sum, m) => sum + (m.partial ? (m.done_bytes ?? 0) : m.size_bytes),
+    0
+  );
   $("#stat-count").textContent = String(modelFiles.length);
   $("#stat-size").textContent = fmtBytes(used);
   $("#stat-free").textContent = fmtBytes(lib.disk_free_bytes);
@@ -195,15 +199,28 @@ function renderLibrary() {
       let kind = KIND_LABEL[m.kind] || m.kind;
       let badgeClass = m.kind;
       if (m.partial) { kind = "未完成"; badgeClass = "partial"; }
-      const actions = m.is_dir
-        ? `<button class="btn ghost small" data-action="merge" data-name="${esc(m.filename)}">合并</button>
-           <button class="btn ghost small danger" data-action="delete" data-name="${esc(m.filename)}">删除</button>`
-        : `<button class="btn ghost small danger" data-action="delete" data-name="${esc(m.filename)}">删除</button>`;
+      const pct = m.partial && m.done_bytes != null && m.total_bytes
+        ? Math.floor((m.done_bytes / m.total_bytes) * 100)
+        : null;
+      const sizeText = pct !== null
+        ? `${fmtBytes(m.done_bytes)} / ${fmtBytes(m.total_bytes)}`
+        : fmtBytes(m.size_bytes);
+      let actions = "";
+      if (m.is_dir) {
+        actions = `<button class="btn ghost small" data-action="merge" data-name="${esc(m.filename)}">合并</button>
+           <button class="btn ghost small danger" data-action="delete" data-name="${esc(m.filename)}">删除</button>`;
+      } else if (m.partial) {
+        const action = m.resume_url ? "resume" : "resume-unknown";
+        actions = `<button class="btn primary small" data-action="${action}" data-name="${esc(m.filename)}">继续</button>
+           <button class="btn ghost small danger" data-action="delete" data-name="${esc(m.filename)}">删除</button>`;
+      } else {
+        actions = `<button class="btn ghost small danger" data-action="delete" data-name="${esc(m.filename)}">删除</button>`;
+      }
       return `
         <tr>
           <td class="name">${esc(m.filename)}${m.is_dir ? '<span class="tree-mark">/</span>' : ""}</td>
-          <td><span class="badge ${badgeClass}">${esc(kind)}</span></td>
-          <td class="num">${fmtBytes(m.size_bytes)}</td>
+          <td><span class="badge ${badgeClass}">${esc(kind)}${pct !== null ? ` ${pct}%` : ""}</span></td>
+          <td class="num">${sizeText}</td>
           <td class="muted">${fmtTime(m.modified_at)}</td>
           <td class="right actions">${actions}</td>
         </tr>`;
@@ -514,6 +531,24 @@ async function deleteModel(name) {
   }
 }
 
+async function resumePartial(name) {
+  const model = (state.library?.models || []).find((m) => m.filename === name);
+  if (!model || !model.resume_url) return primeResume(name);
+  await startDownload({
+    url: model.resume_url,
+    filename: name,
+    sha256: model.resume_sha256 || undefined,
+  });
+}
+
+function primeResume(name) {
+  const base = name.replace(/\.part$/i, "");
+  $("#filename-input").value = base;
+  $("#url-input").focus();
+  $("#install-form").scrollIntoView({ behavior: "smooth", block: "center" });
+  showToast("请粘贴这个文件原来的下载链接；已填好文件名，提交后会从断点续传", "ok");
+}
+
 function gotoMerge(dir) {
   renderMergePanel();
   $("#merge-dir").value = dir;
@@ -577,8 +612,12 @@ function bindEvents() {
   $("#library-body").addEventListener("click", (event) => {
     const button = event.target.closest("[data-action]");
     if (!button) return;
-    if (button.dataset.action === "delete") deleteModel(button.dataset.name);
-    if (button.dataset.action === "merge") gotoMerge(button.dataset.name);
+    const action = button.dataset.action;
+    const name = button.dataset.name;
+    if (action === "delete") deleteModel(name);
+    if (action === "merge") gotoMerge(name);
+    if (action === "resume") resumePartial(name);
+    if (action === "resume-unknown") primeResume(name);
   });
 
   $("#merge-dir").addEventListener("change", refreshMergeHint);

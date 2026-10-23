@@ -108,6 +108,20 @@ LoRA 是「一个 `.safetensors` 适配器」而不是整套模型，所以走�
 - 一个站点超时不影响另一个：ModelScope 的结果照常显示，错误栏写清原因并提供「重试」按钮；
 - 失败信息会明确写「响应超时，镜像此刻可能不稳定」，而不是原始的 `The read operation timed out`。
 
+### 中断与续传
+
+任务列表存在内存里，进程重启就没了；但「这个文件名当初从哪个 URL 下的」会记在
+`.run/downloads.json`，所以重启后仍能续：
+
+- 本地模型库里，`.part` 行显示的是**真实进度**（读 `.part.json` 分片账本），不是文件大小；
+  分片 `.part` 是稀疏文件，`ls -l` 看到的是总大小，别被它骗了；
+- 有链接记录的 `.part` 直接点 **继续**；
+- 没有记录（例如这个功能上线前就开始的任务）点继续会跳到安装表单，文件名已填好，
+  粘贴一次原下载链接即可，提交后从断点续；
+- 分片任务按块续，只补没下完的 16 MiB 分片；
+- 没有分片元数据的老 `.part`：连续写满的按字节续，稀疏文件则重下（无法判断哪些块真写了，
+  宁可重来也不产生坏文件）。
+
 ### 多源择优
 
 同一个仓库/文件若在 HF 镜像和 ModelScope 都存在，会：
@@ -198,6 +212,7 @@ DrawThings 的 `.ckpt` 不是 safetensors 改扩展名，而是 **SQLite 数据�
 | `MODELANCHOR_HUB_TIMEOUT` | `30` | 站点 API 超时（秒）；搜索固定用 12 秒 |
 | `MODELANCHOR_CONCURRENCY` | `2` | 同时下载的任务数 |
 | `MODELANCHOR_CONNECTIONS` | `4` | 单个文件的分片连接数 |
+| `MODELANCHOR_STATE_DIR` | `.run` | 下载记录（`.run/downloads.json`）的存放目录 |
 | `MODELANCHOR_CHUNK_MB` | `16` | 分片大小（MiB） |
 | `MODELANCHOR_SEGMENT_MIN_MB` | `32` | 多大的文件才启用分段 |
 | `MODELANCHOR_SEGMENT_MODE` | `auto` | `auto` 先测速再决定；`always` 强制分段；`never` 单连接 |

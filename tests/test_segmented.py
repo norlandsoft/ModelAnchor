@@ -196,3 +196,43 @@ def test_repo_download_accepts_unknown_sizes(tmp_path: Path, server):
         assert job.total_bytes is None
     finally:
         manager.shutdown()
+
+
+def test_legacy_contiguous_part_resumes_without_meta(tmp_path: Path, server):
+    """旧版本留下的连续 .part 没有分片元数据，也应该从断点续。"""
+    settings = settings_for(tmp_path)
+    chunk = settings.download_chunk_bytes
+    dest = tmp_path / "legacy.safetensors"
+    part = dest.with_name(dest.name + ".part")
+    part.write_bytes(PAYLOAD[: 2 * chunk])
+
+    manager = DownloadManager(settings)
+    try:
+        job = manager.start(f"{server}/legacy.safetensors")
+        wait_for(job)
+        assert job.state == "done", job.error
+        assert dest.read_bytes() == PAYLOAD
+        requested = [start for start, _end in RangeHandler.ranges if not (start == 0 and _end == 0)]
+        assert requested and all(start >= 2 * chunk for start in requested), requested
+    finally:
+        manager.shutdown()
+
+
+def test_sparse_part_without_meta_restarts_safely(tmp_path: Path, server):
+    """稀疏文件（预分配过但没写完）没有元数据时不能瞎续，必须重下整份。"""
+    settings = settings_for(tmp_path)
+    dest = tmp_path / "sparse.safetensors"
+    part = dest.with_name(dest.name + ".part")
+    with open(part, "wb") as fh:
+        fh.truncate(len(PAYLOAD))  # 稀疏空洞
+
+    manager = DownloadManager(settings)
+    try:
+        job = manager.start(f"{server}/sparse.safetensors")
+        wait_for(job)
+        assert job.state == "done", job.error
+        assert dest.read_bytes() == PAYLOAD
+        requested = [start for start, _end in RangeHandler.ranges if not (start == 0 and _end == 0)]
+        assert requested and min(requested) == 0
+    finally:
+        manager.shutdown()

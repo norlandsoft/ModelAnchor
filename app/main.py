@@ -16,6 +16,7 @@ from .config import APP_NAME, VERSION, get_settings
 from .downloader import DownloadManager
 from .hubs import get_hubs
 from .merger import MergeManager
+from .state import DownloadIndex
 
 log = logging.getLogger("modelanchor")
 
@@ -49,7 +50,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
-    app.state.manager = DownloadManager(settings)
+    download_index = DownloadIndex(settings.download_index_path)
+    app.state.download_index = download_index
+    app.state.manager = DownloadManager(settings, index=download_index)
     app.state.merges = MergeManager(settings)
     app.state.hubs = get_hubs(settings)
     app.state.started_at = time.time()

@@ -47,3 +47,20 @@ def test_delete_traversal_is_rejected(monkeypatch, tmp_path: Path):
     with client:
         response = client.delete("/api/library/..%2F..%2Fetc%2Fpasswd")
     assert response.status_code in {400, 404}
+
+
+def test_library_exposes_resume_for_partial(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("MODELANCHOR_STATE_DIR", str(tmp_path / "state"))
+    (tmp_path / "x.safetensors.part").write_bytes(b"x" * 1024)
+    from app.state import DownloadIndex
+
+    DownloadIndex(tmp_path / "state" / "downloads.json").remember(
+        "x.safetensors", "https://example.com/x"
+    )
+
+    client = make_client(monkeypatch, tmp_path)
+    with client:
+        models = client.get("/api/library").json()["models"]
+    row = next(m for m in models if m["filename"] == "x.safetensors.part")
+    assert row["partial"] is True
+    assert row["resume_url"] == "https://example.com/x"

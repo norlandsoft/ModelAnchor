@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ class LocalModel:
     modified_at: float
     partial: bool
     is_dir: bool = False
+    done_bytes: int | None = None
+    total_bytes: int | None = None
 
     @property
     def kind(self) -> str:
@@ -75,16 +78,33 @@ def scan(model_dir: Path) -> list[LocalModel]:
             stat = path.stat()
         except OSError:
             continue
+        partial = path.name.lower().endswith(".part")
+        done_bytes, total_bytes = _partial_progress(path) if partial else (None, None)
         found.append(
             LocalModel(
                 filename=path.name,
                 size_bytes=stat.st_size,
                 modified_at=stat.st_mtime,
-                partial=path.name.lower().endswith(".part"),
+                partial=partial,
+                done_bytes=done_bytes,
+                total_bytes=total_bytes,
             )
         )
     found.sort(key=lambda m: m.filename.lower())
     return found
+
+
+def _partial_progress(path: Path) -> tuple[int | None, int | None]:
+    """分片任务的 .part 是稀疏文件，stat 大小等于总大小；真实进度在 .part.json 里。"""
+    meta_path = path.with_name(path.name + ".json")
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        total = int(meta["total"])
+        chunk = int(meta["chunk"])
+        done = [int(i) for i in meta.get("done", [])]
+        return sum(min(chunk, total - i * chunk) for i in done), total
+    except (OSError, ValueError, KeyError, TypeError):
+        return None, None
 
 
 def _dir_size(path: Path) -> int:

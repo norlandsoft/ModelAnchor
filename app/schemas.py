@@ -12,6 +12,10 @@ class ModelFile(BaseModel):
     kind: str  # ckpt / gguf / safetensors / folder / other
     partial: bool = False
     is_dir: bool = False
+    done_bytes: int | None = None
+    total_bytes: int | None = None
+    resume_url: str = ""
+    resume_sha256: str = ""
 
 
 class LibraryResponse(BaseModel):

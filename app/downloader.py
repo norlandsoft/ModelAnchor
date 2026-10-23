@@ -28,6 +28,7 @@ import httpx
 
 from .config import Settings
 from .library import resolve_target
+from .state import DownloadIndex
 
 CHUNK_SIZE = 1024 * 1024
 USER_AGENT = "ModelAnchor/0.1 (local model manager for DrawThings)"
@@ -131,8 +132,9 @@ class DownloadJob:
 
 
 class DownloadManager:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, index: DownloadIndex | None = None) -> None:
         self.settings = settings
+        self.index = index or DownloadIndex(settings.download_index_path)
         self._jobs: dict[str, DownloadJob] = {}
         self._lock = threading.Lock()
         self._progress_lock = threading.Lock()
@@ -183,6 +185,7 @@ class DownloadManager:
         )
         with self._lock:
             self._jobs[job.id] = job
+        self.index.remember(name, url, job.sha256_expected)
 
         self.settings.model_dir.mkdir(parents=True, exist_ok=True)
         self._pool.submit(self._run_file, job)
@@ -502,6 +505,11 @@ class DownloadManager:
                 job.bytes_done = prior + base
 
         part.parent.mkdir(parents=True, exist_ok=True)
+        if not meta_path.exists():
+            # 先落一个空账本：哪怕刚开下就被取消，重启后也能看出这是分片任务
+            meta_path.write_text(
+                json.dumps({"total": total, "chunk": chunk, "done": []}), encoding="utf-8"
+            )
         if not part.exists():
             part.touch()
         with open(part, "r+b") as handle:
@@ -641,6 +649,24 @@ class DownloadManager:
             return 0.0
         return received / max(time.monotonic() - started, 0.001)
 
+    def _legacy_prefix(self, part: Path, total: int, chunk: int, count: int) -> set[int]:
+        """没有分片元数据的老 .part：只有连续写满的才敢续，稀疏文件一律重下。"""
+        if not part.exists():
+            return set()
+        size = part.stat().st_size
+        if size <= 0 or size > total:
+            part.unlink(missing_ok=True)
+            return set()
+
+        allocated = _allocated_bytes(part)
+        if allocated < size * 0.95:
+            # 稀疏文件：不知道哪些块真的写了，重下更安全
+            part.unlink(missing_ok=True)
+            return set()
+
+        completed = count if size == total else size // chunk
+        return set(range(completed))
+
     def _chunk_span(self, index: int, total: int, chunk: int) -> int:
         return min(chunk, total - index * chunk)
 
@@ -649,8 +675,7 @@ class DownloadManager:
 
     def _load_meta(self, meta_path: Path, part: Path, total: int, chunk: int, count: int) -> set[int]:
         if not meta_path.is_file():
-            part.unlink(missing_ok=True)
-            return set()
+            return self._legacy_prefix(part, total, chunk, count)
         try:
             raw = json.loads(meta_path.read_text(encoding="utf-8"))
             if raw.get("total") != total or raw.get("chunk") != chunk:
@@ -812,6 +837,17 @@ def _client() -> httpx.Client:
         trust_env=False,
         limits=httpx.Limits(max_connections=64, max_keepalive_connections=32, keepalive_expiry=30.0),
     )
+
+
+def _allocated_bytes(path: Path) -> int:
+    try:
+        stat = path.stat()
+        blocks = getattr(stat, "st_blocks", None)
+        if blocks is None:
+            return stat.st_size
+        return blocks * 512
+    except OSError:
+        return 0
 
 
 def _sha256_of(path: Path) -> str:
