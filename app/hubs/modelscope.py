@@ -29,7 +29,7 @@ class ModelScopeHub:
         self._cache = TTLCache(ttl=600)
 
     # ------------------------------------------------------------------ 搜索
-    def search(self, query: str, limit: int = 12) -> list[SearchHit]:
+    def search(self, query: str, limit: int = 12, fmt: str | None = None) -> list[SearchHit]:
         cache_key = f"search:{query}|{limit}"
         cached = self._cache.get(cache_key)
         if isinstance(cached, list):
@@ -103,6 +103,7 @@ class ModelScopeHub:
 
         layout, _ = classify(paths, tags=hit.tags, repo_id=hit.repo_id)
         hit.layout = layout
+        hit.files = [p for p in paths if not p.endswith("/")]
         if layout in {"single", "lora"}:
             weights = [
                 e for e in entries

@@ -65,22 +65,25 @@ class HuggingFaceHub:
         raise HubError("请求失败")
 
     # ------------------------------------------------------------------ 搜索
-    def search(self, query: str, limit: int = 12) -> list[SearchHit]:
-        cache_key = f"search:{query}|{limit}"
+    def search(self, query: str, limit: int = 12, fmt: str | None = None) -> list[SearchHit]:
+        cache_key = f"search:{query}|{limit}|{fmt or ''}"
         cached = self._cache.get(cache_key)
         if isinstance(cached, list):
             return cached
 
-        response = self._get(
-            "/api/models",
-            timeout=min(12.0, self._client.timeout.read or 12.0),
-            params={
+        params = {
                 "search": query,
                 "limit": max(1, min(limit, 50)),
                 "full": "true",
                 "sort": "downloads",
                 "direction": "-1",
-            },
+            }
+        if fmt in {"gguf", "safetensors"}:
+            params["filter"] = fmt
+        response = self._get(
+            "/api/models",
+            timeout=min(12.0, self._client.timeout.read or 12.0),
+            params=params,
         )
         items = response.json()
         hits: list[SearchHit] = []
@@ -102,6 +105,7 @@ class HuggingFaceHub:
                     tags=_pipeline_tags(item),
                     page_url=self.page_url(repo_id),
                     total_bytes=sum(m.size or 0 for m in models),
+                    files=paths,
                 )
             )
         self._cache.set(cache_key, hits)

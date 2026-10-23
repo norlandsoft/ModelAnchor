@@ -51,10 +51,10 @@
     <section class="panel">
       <div class="panel-head">
         <h2>在线检索</h2>
-        <span class="hint">HuggingFace 镜像 + ModelScope：单文件直接下载，整目录下载后可合并为单文件</span>
+        <span class="hint">支持文件名模糊匹配（分隔符、大小写、量化词都能对上）；单文件直接下载，整目录下载后可合并</span>
       </div>
       <form class="search-form" id="search-form">
-        <input id="search-input" type="search" placeholder="搜索模型，例如 flux、qwen-image、sdxl、wan2.2 …" autocomplete="off" />
+        <input id="search-input" type="search" placeholder="搜仓库名或文件名：moss-8steps.safetensors、flux q4_k_m.gguf、sdxl lora …" autocomplete="off" />
         <select id="source-select" aria-label="来源">
           <option value="all">全部站点</option>
           <option value="hf">HuggingFace 镜像</option>

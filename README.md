@@ -47,6 +47,30 @@ MODELANCHOR_MODEL_DIR=/path/to/Models ./scripts/start.sh
 
 检索会同时打两个站点，任一站点失败不影响另一个（错误会显示在结果上方）。
 
+### 模糊检索：按文件名或关键词找
+
+站点 API 只按仓库名做子串匹配，所以直接搜 `moss-8steps.safetensors` 是搜不到的。
+检索时会先把查询拆成 token 再想办法：
+
+- `moss-8steps.safetensors` → `moss` / `8` / `steps`，同时生成
+  `moss-8steps`、`moss-8-steps`、`moss8steps`、`moss` 几种写法并发搜；
+- 打分 = 仓库名 token 覆盖率 × 0.55 + **权重文件**名 token 覆盖率 × 0.45，
+  整串完全命中再 +0.2；图片、README 之类不算命中；
+- 格式词（`safetensors` / `ckpt` / `gguf`）参与硬过滤，HF 侧还会用 `filter` 标签缩小范围；
+- 量化词（`q4_k_m` / `int8` / `fp8` / `w4a8` / `i8x` / `gptq`…）先归一化成一个 token 再加权；
+- 命中的文件会直接显示在结果卡片上，例如：
+
+```
+rookie6667/MOSS-Image-SFT-8-steps-dmd   单文件
+命中文件：MOSS-Image-SFT-8-steps-dmd.safetensors
+```
+
+实测：`moss-8steps.safetensors` 能直接命中 ModelScope 上的同名文件；
+`flux q4_k_m.gguf` 会优先返回带 `Q4_K_M.gguf` 的仓库；`moss int8` 能命中
+`moss_image_sft_*_int8_convrot.safetensors`。
+
+冷启动一次 4–15 秒（并发搜多个写法 + 镜像速度），结果缓存 10 分钟，同词再搜是毫秒级。
+
 ### 布局判定
 
 | 判定 | 依据 | 界面上的行为 |

@@ -281,6 +281,9 @@ function resultCard(hit) {
           ${hit.total_bytes ? `<span>${fmtBytes(hit.total_bytes)}</span>` : ""}
           ${hit.pipeline_tag ? `<span class="tag">${esc(hit.pipeline_tag)}</span>` : ""}
         </div>
+        ${hit.matched_files && hit.matched_files.length
+          ? `<div class="result-match">命中文件：${hit.matched_files.map(esc).join(" · ")}</div>`
+          : ""}
         <div class="result-actions">
           <button class="btn ghost small" data-action="toggle">${expanded ? "收起" : "查看文件"}</button>
           <a class="btn ghost small" href="${esc(hit.page_url)}" target="_blank" rel="noreferrer">源站</a>

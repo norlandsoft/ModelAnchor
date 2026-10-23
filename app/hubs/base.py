@@ -53,13 +53,16 @@ class SearchHit:
     tags: list[str] = field(default_factory=list)
     page_url: str = ""
     total_bytes: int = 0
+    files: list[str] = field(default_factory=list)
+    score: float = 0.0
+    matched_files: list[str] = field(default_factory=list)
 
 
 class Hub(Protocol):
     name: str
     label: str
 
-    def search(self, query: str, limit: int) -> list[SearchHit]: ...
+    def search(self, query: str, limit: int, fmt: str | None = None) -> list[SearchHit]: ...
 
     def repo_info(self, repo_id: str, refresh: bool = False) -> RepoInfo: ...
 

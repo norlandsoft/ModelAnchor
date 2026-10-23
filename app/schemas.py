@@ -101,6 +101,8 @@ class SearchHitOut(BaseModel):
     tags: list[str] = Field(default_factory=list)
     page_url: str = ""
     total_bytes: int = 0
+    matched_files: list[str] = Field(default_factory=list)
+    score: float = 0.0
 
 
 class SearchResponse(BaseModel):

@@ -36,6 +36,7 @@ from .schemas import (
     SearchResponse,
     TasksResponse,
 )
+from .search import build_variants, detect_format, score_hit
 from .sources import alternate_urls, parse_resolve_url
 
 router = APIRouter(prefix="/api", tags=["modelanchor"])
@@ -135,30 +136,88 @@ def search(
     else:
         raise HTTPException(status_code=400, detail=f"未知来源：{source}")
 
-    # 按布局过滤是在站点返回之后做的：多取一些候选，避免前排被过滤光
-    fetch_limit = limit if layout == "all" else min(limit * 3, 50)
+    # 一个关键词拆成几种写法分别搜：moss-8steps → moss-8-steps / moss8steps / moss
+    variants = build_variants(query)
+    fmt = detect_format(query)
 
-    results: list[SearchHitOut] = []
-    errors: list[str] = []
-    with ThreadPoolExecutor(max_workers=len(selected)) as pool:
-        futures = {pool.submit(h.search, query, fetch_limit): h for h in selected}
-        done, pending = wait(futures, timeout=70)
+    def search_hub(hub) -> list:
+        """同一站点的几种写法并发搜，最多等 18 秒；先到先用，别让慢请求串行拖死。"""
+        pool = ThreadPoolExecutor(max_workers=max(1, len(variants)))
+        futures = [pool.submit(hub.search, variant, limit, fmt) for variant in variants]
+        try:
+            done, _pending = wait(futures, timeout=18)
+            collected: list = []
+            seen: set[str] = set()
+            last_error: Exception | None = None
+            for future in done:
+                try:
+                    hits = future.result()
+                except Exception as exc:  # noqa: BLE001 —— 一个写法失败不影响其它
+                    last_error = exc
+                    continue
+                for hit in hits:
+                    if hit.repo_id in seen:
+                        continue
+                    seen.add(hit.repo_id)
+                    collected.append(hit)
+            if not collected and last_error is not None:
+                raise last_error
+            return collected
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    merged: dict[tuple[str, str], object] = {}
+    errors: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=max(1, len(selected))) as pool:
+        futures = {pool.submit(search_hub, hub): hub for hub in selected}
+        done, _pending = wait(futures, timeout=25)
         for future in done:
             hub = futures[future]
             try:
-                for hit in future.result():
-                    results.append(SearchHitOut(**hit.__dict__))
+                hits = future.result()
             except Exception as exc:  # noqa: BLE001 —— 单个站点失败不影响另一个
-                errors.append(f"{hub.label}：{exc}")
-        for future in pending:
-            errors.append(f"{futures[future].label}：请求超时")
+                errors[hub.label] = str(exc)
+                continue
+            for hit in hits:
+                key = (hit.source, hit.repo_id)
+                current = merged.get(key)
+                if current is None:
+                    merged[key] = hit
+                else:
+                    current.files = list(dict.fromkeys([*current.files, *hit.files]))
+                    current.downloads = max(current.downloads, hit.downloads)
+                    current.likes = max(current.likes, hit.likes)
+
+    scored = []
+    for hit in merged.values():
+        score, matched = score_hit(query, hit.repo_id, hit.files)
+        hit.score = score
+        hit.matched_files = matched
+        scored.append(hit)
+
+    # 文件名/关键词都对不上的结果没有意义，直接丢掉；全丢光时退回原列表
+    kept = [h for h in scored if h.score >= 0.25]
+    if not kept and scored:
+        kept = scored
+
+    if fmt:
+        filtered = []
+        for hit in kept:
+            weights = [p for p in hit.files if p.lower().endswith((".safetensors", ".ckpt", ".gguf"))]
+            if not weights or any(p.lower().endswith(f".{fmt}") for p in weights):
+                filtered.append(hit)
+        kept = filtered or kept
 
     if layout != "all":
-        results = [r for r in results if r.layout == layout]
-    results.sort(key=lambda r: r.downloads, reverse=True)
-    if layout != "all":
-        results = results[: limit * 2]
-    return SearchResponse(results=results, errors=errors)
+        kept = [h for h in kept if h.layout == layout]
+
+    kept.sort(key=lambda h: (-h.score, -h.downloads))
+    kept = kept[: max(limit * 2, 20)]
+
+    return SearchResponse(
+        results=[SearchHitOut(**hit.__dict__) for hit in kept],
+        errors=[f"{label}：{message}" for label, message in errors.items()],
+    )
 
 
 @router.get("/repos", response_model=RepoInfoOut)

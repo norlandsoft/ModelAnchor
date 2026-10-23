@@ -465,3 +465,13 @@ input[type="search"]::placeholder { color: #5c687c; }
 .link-chip:hover { background: rgba(110, 168, 254, 0.12); }
 
 .badge.lora { color: #ffb3c7; border-color: rgba(255, 179, 199, 0.32); }
+
+/* 命中文件提示 */
+.result-match {
+  grid-column: 1 / -1;
+  font: 12px var(--mono);
+  color: #7fd6b0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
