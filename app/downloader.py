@@ -36,6 +36,7 @@ _SPEED_WINDOW = 6.0
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 _RETRY_DELAYS = (2.0, 4.0, 8.0)
+_PROBE_TIMEOUT = httpx.Timeout(6.0, connect=6.0)
 _SCORE_BYTES = 512 * 1024
 _SCORE_SECONDS = 2.0
 _PAR_SPAN = 256 * 1024
@@ -157,6 +158,9 @@ class DownloadManager:
             raise DownloadError("只支持 http / https 链接")
 
         name = sanitize_filename(filename, strict=True) if filename else sanitize_filename(url)
+        if name.lower().endswith(".part"):
+            # 从「未完成」行点继续时传进来的可能是 x.safetensors.part，目标是 x.safetensors
+            name = name[: -len(".part")]
         target = resolve_target(self.settings.model_dir, name)
         part = target.with_name(target.name + ".part")
 
@@ -442,7 +446,13 @@ class DownloadManager:
         if expected_total is not None and expected_total < self.settings.segment_min_bytes:
             return unique
 
-        scored = [(self._score_source(client, url), url) for url in unique]
+        # 两个源同时测，别串行等
+        def score(url: str) -> float:
+            return self._score_source(client, url)
+
+        with ThreadPoolExecutor(max_workers=len(unique)) as pool:
+            speeds = list(pool.map(score, unique))
+        scored = list(zip(speeds, unique))
         best_speed, best_url = max(scored, key=lambda item: item[0])
         primary_speed = scored[0][0]
         if best_url != unique[0] and best_speed > primary_speed * 1.2:
@@ -454,7 +464,12 @@ class DownloadManager:
         started = time.monotonic()
         received = 0
         try:
-            with client.stream("GET", url, headers={"Range": f"bytes=0-{_SCORE_BYTES - 1}"}) as response:
+            with client.stream(
+                "GET",
+                url,
+                headers={"Range": f"bytes=0-{_SCORE_BYTES - 1}"},
+                timeout=_PROBE_TIMEOUT,
+            ) as response:
                 if response.status_code not in {200, 206}:
                     return 0.0
                 for chunk in response.iter_bytes(64 * 1024):
@@ -468,7 +483,9 @@ class DownloadManager:
 
     def _probe(self, client: httpx.Client, url: str) -> tuple[int | None, bool]:
         try:
-            with client.stream("GET", url, headers={"Range": "bytes=0-0"}) as response:
+            with client.stream(
+                "GET", url, headers={"Range": "bytes=0-0"}, timeout=_PROBE_TIMEOUT
+            ) as response:
                 if response.status_code == 206:
                     content_range = response.headers.get("content-range", "")
                     tail = content_range.rsplit("/", 1)[-1].strip() if "/" in content_range else ""
@@ -638,7 +655,12 @@ class DownloadManager:
         received = 0
         end = start + length - 1
         try:
-            with client.stream("GET", url, headers={"Range": f"bytes={start}-{end}"}) as response:
+            with client.stream(
+                "GET",
+                url,
+                headers={"Range": f"bytes={start}-{end}"},
+                timeout=_PROBE_TIMEOUT,
+            ) as response:
                 if response.status_code not in {200, 206}:
                     return 0.0
                 for chunk in response.iter_bytes(64 * 1024):

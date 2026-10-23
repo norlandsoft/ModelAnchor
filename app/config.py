@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 
 APP_NAME = "ModelAnchor"
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 

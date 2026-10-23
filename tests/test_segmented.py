@@ -236,3 +236,21 @@ def test_sparse_part_without_meta_restarts_safely(tmp_path: Path, server):
         assert requested and min(requested) == 0
     finally:
         manager.shutdown()
+
+
+def test_resume_filename_with_part_suffix(tmp_path: Path, server):
+    """从前端「未完成」行点继续时会带上 .part 后缀，不能因此报“已存在”。"""
+    settings = settings_for(tmp_path)
+    dest = tmp_path / "model.safetensors"
+    part = dest.with_name(dest.name + ".part")
+    part.write_bytes(PAYLOAD[: 1024 * 1024])
+
+    manager = DownloadManager(settings)
+    try:
+        job = manager.start(f"{server}/model.safetensors", filename="model.safetensors.part")
+        wait_for(job)
+        assert job.state == "done", job.error
+        assert job.filename == "model.safetensors"
+        assert dest.read_bytes() == PAYLOAD
+    finally:
+        manager.shutdown()

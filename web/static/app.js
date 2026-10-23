@@ -536,7 +536,7 @@ async function resumePartial(name) {
   if (!model || !model.resume_url) return primeResume(name);
   await startDownload({
     url: model.resume_url,
-    filename: name,
+    filename: name.replace(/\.part$/i, ""),
     sha256: model.resume_sha256 || undefined,
   });
 }
