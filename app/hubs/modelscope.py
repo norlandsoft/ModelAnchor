@@ -30,11 +30,21 @@ class ModelScopeHub:
 
     # ------------------------------------------------------------------ 搜索
     def search(self, query: str, limit: int = 12) -> list[SearchHit]:
+        cache_key = f"search:{query}|{limit}"
+        cached = self._cache.get(cache_key)
+        if isinstance(cached, list):
+            return cached
+
         limit = max(1, min(limit, 30))
-        response = self._client.put(
-            f"{self.base}/api/v1/dolphin/models",
-            json={"PageSize": limit, "PageNumber": 1, "Name": query, "SortBy": "Default"},
-        )
+        try:
+            response = self._client.put(
+                f"{self.base}/api/v1/dolphin/models",
+                json={"PageSize": limit, "PageNumber": 1, "Name": query, "SortBy": "Default"},
+            )
+        except httpx.TimeoutException as exc:
+            raise HubError("响应超时，稍后重试") from exc
+        except httpx.HTTPError as exc:
+            raise HubError(f"连接失败：{exc}") from exc
         response.raise_for_status()
         payload = response.json()
         if payload.get("Code") != 200:
@@ -70,6 +80,7 @@ class ModelScopeHub:
         if hits:
             with ThreadPoolExecutor(max_workers=min(6, len(hits))) as pool:
                 list(pool.map(self._fill_layout, hits))
+        self._cache.set(cache_key, hits)
         return hits
 
     def _fill_layout(self, hit: SearchHit) -> None:
@@ -170,10 +181,15 @@ class ModelScopeHub:
         return files
 
     def _list_dir(self, owner: str, name: str, root: str) -> list[dict]:
-        response = self._client.get(
-            f"{self.base}/api/v1/models/{owner}/{name}/repo/files",
-            params={"Revision": "master", "Root": root},
-        )
+        try:
+            response = self._client.get(
+                f"{self.base}/api/v1/models/{owner}/{name}/repo/files",
+                params={"Revision": "master", "Root": root},
+            )
+        except httpx.TimeoutException as exc:
+            raise HubError("响应超时，稍后重试") from exc
+        except httpx.HTTPError as exc:
+            raise HubError(f"连接失败：{exc}") from exc
         response.raise_for_status()
         payload = response.json()
         if payload.get("Code") != 200:

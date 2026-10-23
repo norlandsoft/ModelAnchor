@@ -31,6 +31,6 @@ __all__ = [
 
 def get_hubs(settings: Settings) -> dict[str, Hub]:
     return {
-        "hf": HuggingFaceHub(settings.hf_base),
-        "modelscope": ModelScopeHub(),
+        "hf": HuggingFaceHub(settings.hf_base, timeout=settings.hub_timeout),
+        "modelscope": ModelScopeHub(timeout=settings.hub_timeout),
     }

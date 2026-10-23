@@ -151,7 +151,7 @@ def search(
     errors: list[str] = []
     with ThreadPoolExecutor(max_workers=len(selected)) as pool:
         futures = {pool.submit(h.search, query, fetch_limit): h for h in selected}
-        done, pending = wait(futures, timeout=40)
+        done, pending = wait(futures, timeout=70)
         for future in done:
             hub = futures[future]
             try:

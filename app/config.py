@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 
 APP_NAME = "ModelAnchor"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -76,6 +76,7 @@ class Settings:
     segment_mode: str = "auto"
     # HuggingFace 在国内经常直连不通，默认走镜像；可用 MODELANCHOR_HF_BASE 覆盖。
     hf_base: str = "https://hf-mirror.com"
+    hub_timeout: float = 30.0
     catalog_path: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "catalog.json")
     web_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "web")
     allow_arbitrary_url: bool = True
@@ -102,5 +103,6 @@ def get_settings() -> Settings:
         segment_min_bytes=max(0, int(os.environ.get("MODELANCHOR_SEGMENT_MIN_MB", "32"))) * 1024 * 1024,
         segment_mode=os.environ.get("MODELANCHOR_SEGMENT_MODE", "auto").strip().lower(),
         hf_base=os.environ.get("MODELANCHOR_HF_BASE", "https://hf-mirror.com").rstrip("/"),
+        hub_timeout=float(os.environ.get("MODELANCHOR_HUB_TIMEOUT", "30")),
         allow_arbitrary_url=_env_bool("MODELANCHOR_ALLOW_ANY_URL", True),
     )

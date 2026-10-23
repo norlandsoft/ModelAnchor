@@ -26,10 +26,30 @@ class HuggingFaceHub:
         )
         self._cache = TTLCache(ttl=600)
 
-    def _get(self, path: str, params: dict | None = None, attempts: int = 3):
+    def _get(
+        self, path: str, params: dict | None = None, attempts: int = 2, timeout: float | None = None
+    ):
         delay = 1.0
         for attempt in range(attempts):
-            response = self._client.get(f"{self.base}{path}", params=params)
+            try:
+                kwargs = {"params": params}
+                if timeout is not None:
+                    kwargs["timeout"] = timeout
+                response = self._client.get(f"{self.base}{path}", **kwargs)
+            except httpx.TimeoutException as exc:
+                if attempt + 1 < attempts:
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise HubError(
+                    "响应超时，镜像此刻可能不稳定；稍后重试，或先用 ModelScope 的结果"
+                ) from exc
+            except httpx.HTTPError as exc:
+                if attempt + 1 < attempts:
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise HubError(f"连接失败：{exc}") from exc
             if response.status_code in {429, 500, 502, 503, 504}:
                 if attempt + 1 < attempts:
                     time.sleep(delay)
@@ -46,8 +66,14 @@ class HuggingFaceHub:
 
     # ------------------------------------------------------------------ 搜索
     def search(self, query: str, limit: int = 12) -> list[SearchHit]:
+        cache_key = f"search:{query}|{limit}"
+        cached = self._cache.get(cache_key)
+        if isinstance(cached, list):
+            return cached
+
         response = self._get(
             "/api/models",
+            timeout=min(12.0, self._client.timeout.read or 12.0),
             params={
                 "search": query,
                 "limit": max(1, min(limit, 50)),
@@ -78,6 +104,7 @@ class HuggingFaceHub:
                     total_bytes=sum(m.size or 0 for m in models),
                 )
             )
+        self._cache.set(cache_key, hits)
         return hits
 
     # -------------------------------------------------------------- 仓库详情

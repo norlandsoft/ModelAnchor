@@ -219,13 +219,14 @@ function renderSearch() {
 
   if (errs && errs.length) {
     errors.hidden = false;
-    errors.textContent = errs.join(" · ");
+    errors.innerHTML = `<span>${esc(errs.join(" · "))}</span>
+      <button class="btn ghost small" data-action="retry-search" type="button">重试</button>`;
   } else {
     errors.hidden = true;
   }
 
   if (loading) {
-    box.innerHTML = `<p class="empty">正在检索 …</p>`;
+    box.innerHTML = `<p class="empty">正在检索 … 镜像站偶尔较慢，最多等 30 秒左右。</p>`;
     return;
   }
   if (!ran) {
@@ -538,6 +539,10 @@ function bindEvents() {
 
   $("#source-select").addEventListener("change", () => { if (state.search.ran) runSearch(); });
   $("#layout-select").addEventListener("change", () => { if (state.search.ran) runSearch(); });
+
+  $("#search-errors").addEventListener("click", (event) => {
+    if (event.target.closest("[data-action='retry-search']")) runSearch();
+  });
 
   $("#search-results").addEventListener("click", (event) => {
     const button = event.target.closest("[data-action]");

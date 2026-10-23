@@ -98,6 +98,16 @@ LoRA 是「一个 `.safetensors` 适配器」而不是整套模型，所以走�
 
 需要走代理的场景本工具不支持——这是按需求刻意关掉的。
 
+### 镜像超时怎么处理
+
+`hf-mirror.com` 本身会慢：实测同一接口有时 3–5 秒，有时 40 秒以上。所以检索侧做了这些：
+
+- 搜索请求单独用 **12 秒**超时（仓库详情用 `MODELANCHOR_HUB_TIMEOUT`，默认 30 秒）；
+- 超时/连接错误自动重试 1 次；
+- 检索结果缓存 **10 分钟**，同样的关键词第二次是毫秒级；
+- 一个站点超时不影响另一个：ModelScope 的结果照常显示，错误栏写清原因并提供「重试」按钮；
+- 失败信息会明确写「响应超时，镜像此刻可能不稳定」，而不是原始的 `The read operation timed out`。
+
 ### 多源择优
 
 同一个仓库/文件若在 HF 镜像和 ModelScope 都存在，会：
@@ -185,6 +195,7 @@ DrawThings 的 `.ckpt` 不是 safetensors 改扩展名，而是 **SQLite 数据�
 | `MODELANCHOR_PORT` | `7990` | 监听端口 |
 | `MODELANCHOR_MODEL_DIR` | `./models` | 模型目录 |
 | `MODELANCHOR_HF_BASE` | `https://hf-mirror.com` | HuggingFace 源前缀；能直连就改成 `https://huggingface.co` |
+| `MODELANCHOR_HUB_TIMEOUT` | `30` | 站点 API 超时（秒）；搜索固定用 12 秒 |
 | `MODELANCHOR_CONCURRENCY` | `2` | 同时下载的任务数 |
 | `MODELANCHOR_CONNECTIONS` | `4` | 单个文件的分片连接数 |
 | `MODELANCHOR_CHUNK_MB` | `16` | 分片大小（MiB） |
