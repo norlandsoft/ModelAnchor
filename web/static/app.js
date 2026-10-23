@@ -152,6 +152,7 @@ function renderTasks() {
         meta.push(fmtSpeed(job.speed_bps));
         if (job.eta_seconds !== null) meta.push(`剩余 ${fmtEta(job.eta_seconds)}`);
       }
+      if (job.source) meta.push(`<span class="mono-dim">${esc(job.source)}</span>`);
       if (job.current_file) meta.push(`<span class="mono-dim">${esc(job.current_file)}</span>`);
       if (job.error) meta.push(`<span class="err">${esc(job.error)}</span>`);
 

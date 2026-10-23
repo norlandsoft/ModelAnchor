@@ -7,7 +7,8 @@
 - **两站检索**：HuggingFace 镜像（`hf-mirror.com`）与 ModelScope，统一结果，可按「单文件 / Diffusers 目录 / LoRA」过滤
 - **两种下载**：单文件直下；diffusers 整目录按文件串行下载，进度按字节聚合
 - **合并导出**：把 diffusers 目录（unet/transformer + vae + text_encoder…）按标准键前缀合成**单个 safetensors**
-- **可靠性**：断点续传（Range）、429/5xx 退避重试、磁盘空间预检、SHA256 校验、取消/重试
+- **下载加速**：强制直连（不读任何代理环境变量）、同文件多源测速择优、大文件分段并行（16 MiB × 4 连接），实测比单连接快 3–9 倍
+- **可靠性**：断点续传（Range + 分片元数据）、429/5xx 退避重试、磁盘空间预检、SHA256 校验、取消/重试
 - **本地维护**：模型库扫描（文件与目录）、删除、磁盘余量
 
 ## 快速开始
@@ -85,6 +86,45 @@ LoRA 是「一个 `.safetensors` 适配器」而不是整套模型，所以走�
 - 重试：遇到 429/500/502/503/504 会按 2s、4s、8s 退避重试，仍失败则报「服务器限流或暂时不可用」。
 - 取消：保留已下载的 `.part`，下次继续。
 
+## 下载通道与速度
+
+### 强制直连，不走代理
+
+所有 HTTP 客户端都设置了 `trust_env=False`，并显式把连接池指向直连：
+
+- `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `http_proxy` 等环境变量**不会生效**；
+- 也不会读 `.netrc`、证书环境变量；
+- 检索（HF 镜像 / ModelScope）与下载（含重定向后的 CDN）都走同一条规则。
+
+需要走代理的场景本工具不支持——这是按需求刻意关掉的。
+
+### 多源择优
+
+同一个仓库/文件若在 HF 镜像和 ModelScope 都存在，会：
+
+1. 先各拉 512 KiB 测速（2 秒上限）；
+2. 只有备用源比首选**快 1.2 倍以上**才切换，避免测速噪声导致来回跳；
+3. 下载过程中某个源持续失败，会自动换下一个源，并从已下载的字节继续。
+
+实测（同一份 Qwen-Image VAE，242 MiB）：
+
+| 通道 | 吞吐 |
+| --- | --- |
+| HF 镜像单连接 | 2.5 – 6.7 MB/s（字节最终来自境外 CDN） |
+| ModelScope 单连接 | 8.5 MB/s |
+| ModelScope 4 连接 | 13.2 MiB/s 聚合 |
+| **ModelAnchor 实际下载** | **~23 MiB/s，242 MiB 用 15.4 秒** |
+
+### 分段并行 + 自适应
+
+- ≥ `MODELANCHOR_SEGMENT_MIN_MB`（默认 32 MiB）且服务器支持 `Range` 的文件才分段；
+- 分片大小默认 16 MiB，连接数默认 4；
+- 每个分片用 `pwrite` 落在 `.part` 文件的固定偏移，完成一片就在 `<文件名>.part.json` 里记账，中断后只补没下完的分片；
+- `MODELANCHOR_SEGMENT_MODE=auto`（默认）会先测「单连接 vs 4 并发」的实际带宽：并行没有 1.15 倍收益就退回单连接（HF 的 CDN 有时并行反而更慢），`always` / `never` 可手动锁定；
+- 目录任务（diffusers 仓库）里的小文件用 4 个 worker 并发，大文件各自分段，进度按文件累加。
+
+代价：大文件开始下载前有 1–3 秒测速开销；分片任务会多一个 `.part.json` 小文件（完成后自动删除）。
+
 ## 合并导出
 
 「合并导出」把 diffusers 目录合成一个标准 safetensors：
@@ -146,6 +186,10 @@ DrawThings 的 `.ckpt` 不是 safetensors 改扩展名，而是 **SQLite 数据�
 | `MODELANCHOR_MODEL_DIR` | `./models` | 模型目录 |
 | `MODELANCHOR_HF_BASE` | `https://hf-mirror.com` | HuggingFace 源前缀；能直连就改成 `https://huggingface.co` |
 | `MODELANCHOR_CONCURRENCY` | `2` | 同时下载的任务数 |
+| `MODELANCHOR_CONNECTIONS` | `4` | 单个文件的分片连接数 |
+| `MODELANCHOR_CHUNK_MB` | `16` | 分片大小（MiB） |
+| `MODELANCHOR_SEGMENT_MIN_MB` | `32` | 多大的文件才启用分段 |
+| `MODELANCHOR_SEGMENT_MODE` | `auto` | `auto` 先测速再决定；`always` 强制分段；`never` 单连接 |
 | `MODELANCHOR_ALLOW_ANY_URL` | `1` | 是否允许任意链接下载 |
 | `MODELANCHOR_PYTHON` | `3.11` | 建 venv 用的 Python 版本 |
 
@@ -155,8 +199,9 @@ DrawThings 的 `.ckpt` 不是 safetensors 改扩展名，而是 **SQLite 数据�
 ModelAnchor/
 ├── app/
 │   ├── main.py            # 应用装配、页面路由、生命周期
+│   ├── sources.py         # 跨站点备用源查找与直链解析
 │   ├── api.py             # /api/* 路由
-│   ├── downloader.py      # 下载引擎（单文件 + 整目录、续传、重试、取消）
+│   ├── downloader.py      # 下载引擎（多源测速、分段并行、续传、重试、取消）
 │   ├── merger.py          # diffusers → 单文件：组件发现、架构前缀、任务
 │   ├── safetensors_io.py  # safetensors 原始读写（无 torch 依赖）
 │   ├── hubs/              # 两个站点的检索与文件列表
@@ -169,7 +214,7 @@ ModelAnchor/
 ├── data/catalog.json      # 官方模型目录（仅 /api/catalog 使用，界面不展示）
 ├── web/                   # 零构建前端
 ├── scripts/               # start.sh / stop.sh
-└── tests/                 # 39 个用例，全部离线
+└── tests/                 # 45 个用例，全部离线
 ```
 
 ## 开发
@@ -191,6 +236,8 @@ open "http://127.0.0.1:7990/?q=flux"
 - 任务状态在内存里，进程重启后不保留（`.part` 仍可续传）
 - 「DrawThings 官方模型」面板已移除；对应的 `/api/catalog` 仍保留给脚本调用
 - 超大 LoRA 合集（例如 499 个文件）目前只列前 200 条，还没有分页/仓库内搜索
+- 分段下载依赖服务器支持 `Range`；不支持时自动退回单连接
+- 开始下载前有 1–3 秒测速开销（大文件可忽略，小文件不走测速）
 - Civitai 未接入（无免鉴权 API），需要直链 + Cookie/Token 时用「从链接安装」
 - 合并产物没有做权重正确性校验（例如与官方 ckpt 对比），只保证结构与字节搬运正确
 - 还没有做「一个模型 = 主模型 + VAE + 编码器」的成套安装

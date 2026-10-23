@@ -24,6 +24,7 @@ class ModelScopeHub:
             timeout=timeout,
             follow_redirects=True,
             headers={"User-Agent": USER_AGENT, "Content-Type": "application/json"},
+            trust_env=False,
         )
         self._cache = TTLCache(ttl=600)
 

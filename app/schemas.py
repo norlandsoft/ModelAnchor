@@ -75,6 +75,7 @@ class DownloadJobOut(BaseModel):
     files_done: int = 0
     files_total: int = 1
     current_file: str = ""
+    source: str = ""
 
 
 class DownloadsResponse(BaseModel):

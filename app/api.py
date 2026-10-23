@@ -36,6 +36,7 @@ from .schemas import (
     SearchResponse,
     TasksResponse,
 )
+from .sources import alternate_urls, parse_resolve_url
 
 router = APIRouter(prefix="/api", tags=["modelanchor"])
 
@@ -225,8 +226,21 @@ def create_download(payload: DownloadRequest, request: Request) -> DownloadJobOu
             raise HTTPException(status_code=403, detail="已禁用任意 URL 下载")
         url, filename, sha256 = payload.url, payload.filename, payload.sha256
 
+    alternates: list[str] = []
+    if payload.catalog_id:
+        alternates = alternate_urls(
+            request.app.state.hubs, "hf", entry.repo, entry.filename, entry.size_bytes
+        )
+    else:
+        parsed = parse_resolve_url(url, settings.hf_base)
+        if parsed:
+            source, repo_id, path = parsed
+            alternates = alternate_urls(request.app.state.hubs, source, repo_id, path)
+
     try:
-        job = _downloads(request).start(url=url, filename=filename, sha256=sha256)
+        job = _downloads(request).start(
+            url=url, filename=filename, sha256=sha256, alternates=alternates
+        )
     except (FileExists, JobConflict) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DownloadError as exc:
@@ -248,9 +262,13 @@ def create_repo_download(payload: RepoDownloadRequest, request: Request) -> Down
     if not files:
         raise HTTPException(status_code=400, detail="仓库里没有可下载的文件")
 
-    items = [
-        {"path": f.path, "url": hub.file_url(info.repo_id, f.path), "size": f.size} for f in files
-    ]
+    items = []
+    for f in files:
+        urls = [hub.file_url(info.repo_id, f.path)]
+        urls += alternate_urls(
+            request.app.state.hubs, info.source, info.repo_id, f.path, f.size
+        )
+        items.append({"path": f.path, "url": urls[0], "urls": urls, "size": f.size})
     try:
         job = _downloads(request).start_repo(info.repo_id, items, source=payload.source)
     except (FileExists, JobConflict) as exc:

@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 
 APP_NAME = "ModelAnchor"
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -68,6 +68,12 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 7990
     max_concurrent_downloads: int = 2
+    # 下载加速：分段并行连接数、分片大小、启用分段的下限
+    download_connections: int = 4
+    download_chunk_bytes: int = 16 * 1024 * 1024
+    segment_min_bytes: int = 32 * 1024 * 1024
+    # auto: 先测速再决定；always: 支持 Range 就并行；never: 只走单连接
+    segment_mode: str = "auto"
     # HuggingFace 在国内经常直连不通，默认走镜像；可用 MODELANCHOR_HF_BASE 覆盖。
     hf_base: str = "https://hf-mirror.com"
     catalog_path: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "catalog.json")
@@ -91,6 +97,10 @@ def get_settings() -> Settings:
         host=os.environ.get("MODELANCHOR_HOST", "127.0.0.1"),
         port=int(os.environ.get("MODELANCHOR_PORT", "7990")),
         max_concurrent_downloads=int(os.environ.get("MODELANCHOR_CONCURRENCY", "2")),
+        download_connections=max(1, int(os.environ.get("MODELANCHOR_CONNECTIONS", "4"))),
+        download_chunk_bytes=max(1, int(os.environ.get("MODELANCHOR_CHUNK_MB", "16"))) * 1024 * 1024,
+        segment_min_bytes=max(0, int(os.environ.get("MODELANCHOR_SEGMENT_MIN_MB", "32"))) * 1024 * 1024,
+        segment_mode=os.environ.get("MODELANCHOR_SEGMENT_MODE", "auto").strip().lower(),
         hf_base=os.environ.get("MODELANCHOR_HF_BASE", "https://hf-mirror.com").rstrip("/"),
         allow_arbitrary_url=_env_bool("MODELANCHOR_ALLOW_ANY_URL", True),
     )
